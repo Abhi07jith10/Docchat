@@ -1,118 +1,94 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
-from documents.models import Document, DocumentChunk
-from documents.rag import generate_answer
-from .models import ChatSession, Message
-from .serializers import ChatSessionSerializer
+from .models import Document, DocumentChunk, SuggestedQuestion
+from .serializers import DocumentSerializer, SuggestedQuestionSerializer
+from .utils import extract_and_chunk_pdf
+from .rag import generate_suggested_questions
 
-class QueryView(APIView):
+class DocumentUploadView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        document_id = request.data.get('document_id')
-        question = request.data.get('question')
-        session_id = request.data.get('session_id')  # optional, for continuing a chat
+        file_obj = request.FILES.get('file')
 
-        if not document_id or not question:
-            return Response({'error': 'document_id and question are required'}, status=400)
+        if not file_obj:
+            return Response({'error': 'No file provided'}, status=400)
 
-        # Validate question isn't empty/whitespace and isn't excessively long
-        question = question.strip()
-        if not question:
-            return Response({'error': 'Question cannot be empty'}, status=400)
-        if len(question) > 1000:
-            return Response({'error': 'Question is too long (max 1000 characters)'}, status=400)
+        # Validate file type
+        if not file_obj.name.lower().endswith('.pdf'):
+            return Response({'error': 'Only PDF files are supported'}, status=400)
 
-        # Verify the document belongs to this user
+        # Validate file size (limit to 10MB)
+        max_size = 10 * 1024 * 1024  # 10MB in bytes
+        if file_obj.size > max_size:
+            return Response({'error': 'File size must be under 10MB'}, status=400)
+
+        title = request.data.get('title', file_obj.name)
+
+        # Save the document first (this uploads it to S3)
+        document = Document.objects.create(
+            user=request.user,
+            title=title,
+            file=file_obj
+        )
+
+        # Extract and chunk the text
+        try:
+            chunks = extract_and_chunk_pdf(document.file)
+        except Exception as e:
+            document.delete()
+            return Response({'error': f'Failed to process PDF: {str(e)}'}, status=400)
+
+        # Save each chunk to the database
+        for chunk in chunks:
+            DocumentChunk.objects.create(
+                document=document,
+                text=chunk['text'],
+                page_number=chunk['page_number'],
+                chunk_index=chunk['chunk_index']
+            )
+
+        # Generate suggested questions
+        try:
+            saved_chunks = list(DocumentChunk.objects.filter(document=document).order_by('chunk_index'))
+            suggested = generate_suggested_questions(saved_chunks)
+            for question in suggested:
+                SuggestedQuestion.objects.create(document=document, question_text=question)
+        except Exception as e:
+            print(f"Suggested question generation failed: {e}")  # non-critical, don't block upload
+
+        serializer = DocumentSerializer(document)
+        return Response({
+            'document': serializer.data,
+            'chunks_created': len(chunks)
+        }, status=201)
+
+
+class DocumentListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        documents = Document.objects.filter(user=request.user).order_by('-uploaded_at')
+        serializer = DocumentSerializer(documents, many=True)
+        return Response(serializer.data)
+
+
+class SuggestedQuestionsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, document_id):
         try:
             document = Document.objects.get(id=document_id, user=request.user)
         except Document.DoesNotExist:
             return Response({'error': 'Document not found'}, status=404)
 
-        # Get or create the chat session
-        if session_id:
-            try:
-                session = ChatSession.objects.get(id=session_id, user=request.user)
-            except ChatSession.DoesNotExist:
-                return Response({'error': 'Chat session not found'}, status=404)
-        else:
-            session = ChatSession.objects.create(
-                user=request.user,
-                document=document,
-                title=question[:50]
-            )
-
-        # Save the user's question as a message
-        Message.objects.create(session=session, role='user', content=question)
-
-        # Get all chunks for this document
-        chunks = list(DocumentChunk.objects.filter(document=document).order_by('chunk_index'))
-
-        if not chunks:
-            return Response({'error': 'This document has no processed content'}, status=400)
-
-        # Generate the answer using RAG
-        try:
-            answer_text, source_page = generate_answer(question, chunks)
-        except Exception as e:
-            return Response({'error': f'Failed to generate answer: {str(e)}'}, status=500)
-
-        # Save the AI's answer as a message
-        Message.objects.create(
-            session=session,
-            role='assistant',
-            content=answer_text,
-            source_page=source_page
-        )
-
-        return Response({
-            'session_id': session.id,
-            'answer': answer_text,
-            'source_page': source_page
-        })
-
-
-class ChatListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        sessions = ChatSession.objects.filter(user=request.user).order_by('-created_at')
-        serializer = ChatSessionSerializer(sessions, many=True)
+        questions = SuggestedQuestion.objects.filter(document=document)
+        serializer = SuggestedQuestionSerializer(questions, many=True)
         return Response(serializer.data)
 
-
-class ChatDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, session_id):
-        try:
-            session = ChatSession.objects.get(id=session_id, user=request.user)
-        except ChatSession.DoesNotExist:
-            return Response({'error': 'Chat session not found'}, status=404)
-
-        serializer = ChatSessionSerializer(session)
-        return Response(serializer.data)
-
-
-class ChatRenameView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, session_id):
-        try:
-            session = ChatSession.objects.get(id=session_id, user=request.user)
-        except ChatSession.DoesNotExist:
-            return Response({'error': 'Chat session not found'}, status=404)
-
-        new_title = request.data.get('title', '').strip()
-        if not new_title:
-            return Response({'error': 'Title cannot be empty'}, status=400)
-        if len(new_title) > 255:
-            return Response({'error': 'Title too long'}, status=400)
-
-        session.title = new_title
-        session.save()
-        return Response({'id': session.id, 'title': session.title})
 
 class DocumentRenameView(APIView):
     permission_classes = [IsAuthenticated]

@@ -1,15 +1,14 @@
 from rest_framework import serializers
-from .models import ChatSession, Message
+from .models import Document, DocumentChunk, SuggestedQuestion
 
-class MessageSerializer(serializers.ModelSerializer):
+class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Message
-        fields = ['id', 'role', 'content', 'source_page', 'created_at']
+        model = Document
+        fields = ['id', 'title', 'file', 'uploaded_at']
+        read_only_fields = ['id', 'uploaded_at']
 
 
-class ChatSessionSerializer(serializers.ModelSerializer):
-    messages = MessageSerializer(many=True, read_only=True)
-
+class SuggestedQuestionSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ChatSession
-        fields = ['id', 'title', 'document', 'created_at', 'messages']
+        model = SuggestedQuestion
+        fields = ['id', 'question_text']

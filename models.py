@@ -1,27 +1,29 @@
 from django.db import models
 from django.contrib.auth.models import User
-from documents.models import Document
 
-class ChatSession(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_sessions')
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='chat_sessions')
-    title = models.CharField(max_length=255, default='New Chat')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.title} ({self.user.username})"
-
-
-class Message(models.Model):
-    ROLE_CHOICES = [
-        ('user', 'User'),
-        ('assistant', 'Assistant'),
-    ]
-    session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name='messages')
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
-    content = models.TextField()
-    source_page = models.IntegerField(null=True, blank=True)  # which page the answer came from, if any
-    created_at = models.DateTimeField(auto_now_add=True)
+class Document(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='documents')
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to='documents/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.role}: {self.content[:50]}"
+        return self.title
+
+
+class DocumentChunk(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='chunks')
+    text = models.TextField()
+    page_number = models.IntegerField()
+    chunk_index = models.IntegerField()  # order of chunk within the document
+
+    def __str__(self):
+        return f"{self.document.title} - page {self.page_number} - chunk {self.chunk_index}"
+
+
+class SuggestedQuestion(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='suggested_questions')
+    question_text = models.CharField(max_length=500)
+
+    def __str__(self):
+        return self.question_text

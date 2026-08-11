@@ -44,6 +44,12 @@ export const sendQuery = (documentId, question, sessionId = null) =>
     session_id: sessionId,
   })
 
+export const renameChat = (sessionId, title) =>
+  api.patch(`/chats/${sessionId}/rename/`, { title })
+
+export const renameDocument = (documentId, title) =>
+  api.patch(`/documents/${documentId}/rename/`, { title })
+
 export const listChats = () => api.get('/chats/list/')
 
 export const getChatDetail = (sessionId) => api.get(`/chats/${sessionId}/`)
