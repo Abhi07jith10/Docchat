@@ -1,6 +1,5 @@
 from django.contrib import admin
-from .models import Document, DocumentChunk, SuggestedQuestion
+from .models import ChatSession, Message
 
-admin.site.register(Document)
-admin.site.register(DocumentChunk)
-admin.site.register(SuggestedQuestion)
+admin.site.register(ChatSession)
+admin.site.register(Message)

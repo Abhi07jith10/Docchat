@@ -1,5 +1,5 @@
 from django.apps import AppConfig
 
 
-class DocumentsConfig(AppConfig):
-    name = 'documents'
+class ChatsConfig(AppConfig):
+    name = 'chats'

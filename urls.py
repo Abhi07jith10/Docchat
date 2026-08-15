@@ -1,9 +1,9 @@
 from django.urls import path
-from .views import DocumentUploadView, DocumentListView, SuggestedQuestionsView, DocumentRenameView
+from .views import QueryView, ChatListView, ChatDetailView, ChatRenameView
 
 urlpatterns = [
-    path('upload/', DocumentUploadView.as_view(), name='document-upload'),
-    path('list/', DocumentListView.as_view(), name='document-list'),
-    path('<int:document_id>/suggestions/', SuggestedQuestionsView.as_view(), name='document-suggestions'),
-    path('<int:document_id>/rename/', DocumentRenameView.as_view(), name='document-rename'),
+    path('query/', QueryView.as_view(), name='query'),
+    path('list/', ChatListView.as_view(), name='chat-list'),
+    path('<int:session_id>/', ChatDetailView.as_view(), name='chat-detail'),
+    path('<int:session_id>/rename/', ChatRenameView.as_view(), name='chat-rename'),
 ]
