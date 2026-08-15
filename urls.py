@@ -1,9 +1,8 @@
 from django.urls import path
-from .views import QueryView, ChatListView, ChatDetailView, ChatRenameView
+from .views import RegisterView, LoginView, LogoutView
 
 urlpatterns = [
-    path('query/', QueryView.as_view(), name='query'),
-    path('list/', ChatListView.as_view(), name='chat-list'),
-    path('<int:session_id>/', ChatDetailView.as_view(), name='chat-detail'),
-    path('<int:session_id>/rename/', ChatRenameView.as_view(), name='chat-rename'),
+    path('register/', RegisterView.as_view(), name='register'),
+    path('login/', LoginView.as_view(), name='login'),
+    path('logout/', LogoutView.as_view(), name='logout'),
 ]
